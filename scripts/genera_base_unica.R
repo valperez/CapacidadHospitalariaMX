@@ -4,43 +4,51 @@ setwd("~/Dropbox/HospitalizacionesCOVIDMX")
 library(tidyverse)
 library(readr)
 library(lubridate)
-
+tipo <- "estatal"
 #---------------------------------------------------
 # UNIR TODOS LOS ARCHIVOS EN UNA BASE ÚNICA
 #---------------------------------------------------
 
-archivos <- list.files("raw", pattern = "Hospitalizaciones*")
+archivos <- list.files(paste0("raw/", tipo), pattern = "Hospitalizaciones*")
 fechas   <- str_replace_all(archivos,"Hospitalizaciones_","")
 fechas   <- str_replace_all(fechas,".csv","") 
 
 #Variables para el join
-common_vars = c("CLUES","Estado","Institución","Unidad médica")
-colspecs = cols(
-  `Unidad médica`  = col_character(),
-  Estado           = col_character(),
-  Institución      = col_character(),
-  CLUES            = col_character(),
-  `% de Ocupación` = col_double()
-)
+if (tipo == "clues"){
+  common_vars = c("CLUES","Estado","Institución","Unidad médica")
+  colspecs = cols(
+    `Unidad médica`  = col_character(),
+    Estado           = col_character(),
+    Institución      = col_character(),
+    CLUES            = col_character(),
+    `% de Ocupación` = col_double()
+  )
+} else{
+  common_vars = c("Estado")
+  colspecs = cols(
+    Estado           = col_character(),
+    `% Ocupación` = col_double()
+  )
+}
 
 for (fecha in fechas){
   
   message(paste0("Trabajando el ", fecha))
   
-  hosp <- read_csv(paste0("raw/Hospitalizaciones_",fecha,".csv"),
+  hosp <- read_csv(paste0("raw/",tipo,"/Hospitalizaciones_",fecha,".csv"),
                    locale = locale(encoding = "UTF-8"),
                    col_types = colspecs) 
-  hosp <- hosp %>% rename(`Hospitalizados (%)` = `% de Ocupación`)
+  hosp <- hosp %>% rename(`Hospitalizados (%)` := starts_with("%"))
   
-  vent <- read_csv(paste0("raw/Ventiladores_",fecha,".csv"),
+  vent <- read_csv(paste0("raw/",tipo,"/Ventiladores_",fecha,".csv"),
                    locale = locale(encoding = "UTF-8"),
                    col_types = colspecs) 
-  vent <- vent %>% rename(`Ventilación (%)` = `% de Ocupación`)
+  vent <- vent %>% rename(`Ventilación (%)` := starts_with("%"))
   
-  uci  <- read_csv(paste0("raw/UCI_",fecha,".csv"),
+  uci  <- read_csv(paste0("raw/",tipo,"/UCI_",fecha,".csv"),
                    locale = locale(encoding = "UTF-8"),
                    col_types = colspecs) 
-  uci  <- uci %>% rename(`UCI y Ventilación (%)` = `% de Ocupación`)
+  uci  <- uci %>% rename(`UCI y Ventilación (%)` := starts_with("%"))
   
   hosp <- hosp %>% full_join(vent, by = common_vars) %>% 
     full_join(uci, by = common_vars)
@@ -56,4 +64,4 @@ for (fecha in fechas){
 }
 
 datos %>% distinct() %>%
-  write_rds("processed/HospitalizacionesMX.rds")
+  write_rds(paste0("processed/HospitalizacionesMX_",tipo,".rds"))

@@ -16,8 +16,8 @@ import time
  
 folder_of_download = "/Users/rod/Dropbox/HospitalizacionesCOVIDMX/raw"
 direccion_chromedriver = '/Users/rod/Dropbox/HospitalizacionesCOVIDMX/chromedriver'
-descargar_desde = "2020-01-18"
-descargar_hasta = "2021-02-03"
+descargar_desde = "2020-02-03"
+descargar_hasta = "2021-02-05"
 sleep_time    = 10 #Tiempo que tarda la página de la UNAM de cambiar ventana
 download_time = 2  #Tiempo que tarda en descargarse el archivo en tu red
 
