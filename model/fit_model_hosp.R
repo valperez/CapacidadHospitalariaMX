@@ -10,9 +10,9 @@ library(rstan)
 library(zoo)
 
 #-------------------- Lectura y seleccion de Datos -------------------
-#githubURL <- ("https://github.com/RodrigoZepeda/CapacidadHospitalariaMX/blob/master/processed/HospitalizacionesMX_estatal.rds?raw=true")
-#download.file(githubURL,"Hospitaizaciones_estatalMX.rds")
-hospitalizaciones <- readRDS("Hospitaizaciones_estatalMX.rds")
+githubURL <- ("https://github.com/RodrigoZepeda/CapacidadHospitalariaMX/blob/master/processed/HospitalizacionesMX_estatal.rds?raw=true")
+download.file(githubURL,"Hospitalizaciones_estatalMX.rds")
+hospitalizaciones <- readRDS("Hospitalizaciones_estatalMX.rds")
 stan_fname        <- "BModel.stan"
 
 #Vamos a pivotear para que me haga una tabla bonita
@@ -20,8 +20,8 @@ observados <- hospitalizaciones %>%
   select(-`Ventilación (%)`,-`UCI y Ventilación (%)`) %>%
   mutate(`Hospitalizados (%)` = `Hospitalizados (%)`/100) %>%
   mutate(Fecha = ymd(Fecha)) %>%
-  filter(Fecha > ymd("2020/10/10"))  %>%
-  filter(Estado %in% sample(unique(hospitalizaciones$Estado), 3)) %>%
+  filter(Fecha > ymd("2020/04/20"))  %>%
+  #filter(Estado %in% sample(unique(hospitalizaciones$Estado), 3)) %>%
   group_by(Fecha, Estado) %>%
   arrange(Fecha) %>%
   mutate(`Hospitalizados (%)` = 
