@@ -5,3 +5,4 @@ model/basura
 BModel
 BModel_threads
 model/Hospitalizaciones_estatalMX.rds
+model/ModelBetafit.RData
