@@ -241,8 +241,21 @@ Hosp_enero <- fread("Hosp_2021-01-10m15.csv.gz")
 
 #Hacemos un vector de meses
 meses <- c("julio", "oct", "enero")
+fechas <- matrix(c(meses, vector_fechas), nrow = 2 )
+dias_predict <- 60
 
 true_prob <- function(mes, estado){
+  
+  if (mes == "julio"){
+    observados_fecha <- observados %>%
+      filter(Fecha > vector_fechas[1] & Fecha <= (vector_fechas[1] + days(dias_predict)))
+  } else if (mes == "oct"){
+    observados_fecha <- observados %>%
+      filter(Fecha > vector_fechas[2] & Fecha <= (vector_fechas[2] + days(dias_predict)))
+  } else if (mes == "enero"){
+    observados_fecha <- observados %>%
+      filter(Fecha > vector_fechas[3] & Fecha <= (vector_fechas[3] + days(dias_predict)))
+  }
   
   assign(paste0("Hosp_", mes, estado), get(paste0("Hosp_", mes)) %>%
            filter(Estado == !!estado) %>%
@@ -254,7 +267,7 @@ true_prob <- function(mes, estado){
                   EstadoNum, DiaNum, Estado, Fecha, 
                   `Hospitalizados (%)`) %>%
            mutate(Fecha = as.Date(Fecha)) %>%
-           left_join(observados, by = c("Estado", "Fecha")) %>%
+           left_join(observados_fecha, by = c("Estado", "Fecha")) %>%
            rename(Hospitalizados_obs = `Hospitalizados (%).y`) %>%
            mutate(dentro_75 = if_else(Hospitalizados_obs >= `12.5%` & Hospitalizados_obs <= `87.5%`,  TRUE, FALSE)) %>%
            mutate(dentro_90 = if_else(Hospitalizados_obs >= `5%` & Hospitalizados_obs <=  `95%`,  TRUE, FALSE)) %>%
@@ -262,10 +275,10 @@ true_prob <- function(mes, estado){
            mutate(dentro_99 = if_else(Hospitalizados_obs >= `0.5%` & Hospitalizados_obs <= `99.5%`,  TRUE, FALSE)) )
   
   assign(paste0("Hosp_resultados", mes, estado), get(paste0("Hosp_", mes, estado)) %>%
-           summarise(sum(dentro_75, na.rm = TRUE) / nrow(get(paste0("Hosp_", mes, estado))), 
-                     sum(dentro_90, na.rm = TRUE) / nrow(get(paste0("Hosp_", mes, estado))), 
-                     sum(dentro_95, na.rm = TRUE) / nrow(get(paste0("Hosp_", mes, estado))),
-                     sum(dentro_99, na.rm = TRUE) / nrow(get(paste0("Hosp_", mes, estado)))))
+           summarise(sum(dentro_75, na.rm = TRUE) / dias_predict, 
+                     sum(dentro_90, na.rm = TRUE) / dias_predict, 
+                     sum(dentro_95, na.rm = TRUE) / dias_predict,
+                     sum(dentro_99, na.rm = TRUE) / dias_predict))
   
   lista <- list("Hosp" = get(paste0("Hosp_", mes, estado)), 
                 "resultados" = get(paste0("Hosp_resultados", mes, estado)))
@@ -315,13 +328,13 @@ colnames(enero) <- nombres_columnas("enero")
 resultados <- bind_cols(julio, oct, enero)
 
 
-
 calculo_mse <- function(mes){
   mse_aux <- data.frame()
   for (estado in estados){
     aux <- get(paste0("Hosp_", mes, estado)) 
     aux <- aux %>%
-      select(`50%`, `Hospitalizados_obs`)
+      select(`50%`, `Hospitalizados_obs`) %>%
+      drop_na()
     mse_aux <- rbind(mse_aux, mean((aux$`50%` - aux$Hospitalizados_obs)^2, na.rm = T))
   }
   return(mse_aux)
@@ -341,7 +354,8 @@ calculo_mae <- function(mes){
   for (estado in estados){
     aux <- get(paste0("Hosp_", mes, estado)) 
     aux <- aux %>%
-      select(`50%`, `Hospitalizados_obs`)
+      select(`50%`, `Hospitalizados_obs`) %>%
+      drop_na()
     mae_aux <- rbind(mae_aux, mean(abs(aux$`50%` - aux$Hospitalizados_obs), na.rm = T))
   }
   return(mae_aux)
@@ -358,6 +372,113 @@ rownames(mae) <- estados
 write.csv(resultados, file = "resultados_int.csv", row.names = T)
 write.csv(mse, file = "mse.csv", row.names = T)
 write.csv(mae, file = "mae.csv", row.names = T)
+
+# Vamos a hacer una de las gráficas para ver como se está comportando la probabilidad
+# Quiero hacer una por mes pero que esté facet wrap por Estado
+
+# Julio
+aux <- true_prob("julio", estados[1])
+acumulados_julio <- aux$Hosp
+acumulados_julio <- acumulados_julio %>%
+  select(Estado, Fecha, starts_with("dentro")) %>%
+  drop_na(dentro_75) %>%
+  mutate(acumulada_75 = cumsum(dentro_75) / c(1:dias_predict)) %>%
+  mutate(acumulada_90 = cumsum(dentro_90) / c(1:dias_predict)) %>%
+  mutate(acumulada_95 = cumsum(dentro_95) / c(1:dias_predict)) %>%
+  mutate(acumulada_99 = cumsum(dentro_99) / c(1:dias_predict)) 
+
+for (i in 2:length(estados)){
+  aux <- true_prob("julio", estados[i])
+  aux$Hosp <- aux$Hosp %>%
+    select(Estado, Fecha, starts_with("dentro")) %>%
+    drop_na(dentro_75) %>%
+    mutate(acumulada_75 = cumsum(dentro_75) / c(1:dias_predict)) %>%
+    mutate(acumulada_90 = cumsum(dentro_90) / c(1:dias_predict)) %>%
+    mutate(acumulada_95 = cumsum(dentro_95) / c(1:dias_predict)) %>%
+    mutate(acumulada_99 = cumsum(dentro_99) / c(1:dias_predict)) 
+  acumulados_julio <- rbind(acumulados_julio, aux$Hosp)
+}
+
+grafica_julio <- ggplot(acumulados_julio, aes(x = Fecha)) +
+  geom_point(aes(y = acumulada_75, color = "75%"), size = 0.1) + 
+  geom_point(aes(y = acumulada_90, color = "90%"), size = 0.1) +
+  geom_point(aes(y = acumulada_95, color = "95%"), size = 0.1) + 
+  geom_point(aes(y = acumulada_99, color = "99%"), size = 0.1) +
+  facet_wrap(~Estado) +
+  labs(
+    x = "Fecha",
+    y = "Julio")
+
+# Octubre
+aux <- true_prob("oct", estados[1])
+acumulados_oct <- aux$Hosp
+acumulados_oct <- acumulados_oct %>%
+  select(Estado, Fecha, starts_with("dentro")) %>%
+  drop_na(dentro_75) %>%
+  mutate(acumulada_75 = cumsum(dentro_75) / c(1:dias_predict)) %>%
+  mutate(acumulada_90 = cumsum(dentro_90) / c(1:dias_predict)) %>%
+  mutate(acumulada_95 = cumsum(dentro_95) / c(1:dias_predict)) %>%
+  mutate(acumulada_99 = cumsum(dentro_99) / c(1:dias_predict)) 
+
+for (i in 2:length(estados)){
+  aux <- true_prob("oct", estados[i])
+  aux$Hosp <- aux$Hosp %>%
+    select(Estado, Fecha, starts_with("dentro")) %>%
+    drop_na(dentro_75) %>%
+    mutate(acumulada_75 = cumsum(dentro_75) / c(1:dias_predict)) %>%
+    mutate(acumulada_90 = cumsum(dentro_90) / c(1:dias_predict)) %>%
+    mutate(acumulada_95 = cumsum(dentro_95) / c(1:dias_predict)) %>%
+    mutate(acumulada_99 = cumsum(dentro_99) / c(1:dias_predict)) 
+  acumulados_oct <- rbind(acumulados_oct, aux$Hosp)
+}
+
+grafica_oct <- ggplot(acumulados_oct, aes(x = Fecha)) +
+  geom_point(aes(y = acumulada_75, color = "75%"), size = 0.1) + 
+  geom_point(aes(y = acumulada_90, color = "90%"), size = 0.1) +
+  geom_point(aes(y = acumulada_95, color = "95%"), size = 0.1) + 
+  geom_point(aes(y = acumulada_99, color = "99%"), size = 0.1) +
+  facet_wrap(~Estado) +
+  labs(
+    x = "Fecha",
+    y = "Octubre")
+
+
+# Enero
+aux <- true_prob("enero", estados[1])
+acumulados_enero <- aux$Hosp
+acumulados_enero <- acumulados_enero %>%
+  select(Estado, Fecha, starts_with("dentro")) %>%
+  drop_na(dentro_75) %>%
+  mutate(acumulada_75 = cumsum(dentro_75) / c(1:(dias_predict - 1))) %>%
+  mutate(acumulada_90 = cumsum(dentro_90) / c(1:(dias_predict - 1))) %>%
+  mutate(acumulada_95 = cumsum(dentro_95) / c(1:(dias_predict - 1))) %>%
+  mutate(acumulada_99 = cumsum(dentro_99) / c(1:(dias_predict - 1))) 
+
+for (i in 2:length(estados)){
+  aux <- true_prob("enero", estados[i])
+  aux$Hosp <- aux$Hosp %>%
+    select(Estado, Fecha, starts_with("dentro")) %>%
+    drop_na(dentro_75) %>%
+    mutate(acumulada_75 = cumsum(dentro_75) / c(1:(dias_predict - 1))) %>%
+    mutate(acumulada_90 = cumsum(dentro_90) / c(1:(dias_predict - 1))) %>%
+    mutate(acumulada_95 = cumsum(dentro_95) / c(1:(dias_predict - 1))) %>%
+    mutate(acumulada_99 = cumsum(dentro_99) / c(1:(dias_predict - 1))) 
+  acumulados_enero <- rbind(acumulados_enero, aux$Hosp)
+}
+
+grafica_enero <- ggplot(acumulados_enero, aes(x = Fecha)) +
+  geom_point(aes(y = acumulada_75, color = "75%"), size = 0.1) + 
+  geom_point(aes(y = acumulada_90, color = "90%"), size = 0.1) +
+  geom_point(aes(y = acumulada_95, color = "95%"), size = 0.1) + 
+  geom_point(aes(y = acumulada_99, color = "99%"), size = 0.1) +
+  facet_wrap(~Estado) +
+  labs(
+    x = "Fecha",
+    y = "Enero")
+
+
+
+
 
 
 
@@ -403,3 +524,4 @@ for (k in 1:length(vector_fechas)){
     ggsave(paste0("Hosp_predict_v2_",vector_fechas[k],"m", m, "_conObservados.pdf"), width = 20, height = 10)
   dev.off
 }
+
