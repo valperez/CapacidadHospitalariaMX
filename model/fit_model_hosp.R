@@ -16,8 +16,10 @@ library(R.utils) #install.packages('R.utils')
 library(Metrics)
 options(mc.cores = max(parallel::detectCores() - 2, 1))
 
+vector_fechas <-  seq(as.Date("2020-05-10"), as.Date("2021-01-10"), by="months")
+
 #las fechas seran 10 de julio, 10 de octubre y 10 de enero
-vector_fechas <- c(ymd("2020/07/10"), ymd("2020/10/10"), ymd("2021/01/10"))
+#vector_fechas <- c(ymd("2020/07/10"), ymd("2020/10/10"), ymd("2021/01/10"))
 
 for (i in 1:length(vector_fechas)){
   #-------------------- Lectura y seleccion de Datos -------------------
@@ -61,7 +63,7 @@ for (i in 1:length(vector_fechas)){
   PHosp <- (hospitalizaciones %>% select(-Estado) %>% as.matrix()) 
   
   #Caracter?sticas del modelo 
-  chains = 4; iter_warmup = 1000; nsim = 2000; pchains = 4; m = 15; 
+  chains = 4; iter_warmup = 1000; nsim = 2000; pchains = 4; m = 30; #m = 15;   
   datos  <- list(m = m, 
                  dias_predict = 60,
                  ndias = ncol(PHosp) , nestados = nrow(PHosp), PHosp = PHosp,
@@ -116,7 +118,7 @@ for (i in 1:length(vector_fechas)){
                                      ~ quantile(., probs = c(0.005, 0.025, 0.05, 
                                                              0.125, 0.25, 0.325,0.4, 0.5,
                                                              0.6, 0.675,0.75, 0.875, 0.95, 
-                                                             0.975, 0.995)))
+                                                             0.975, 0.995), na.rm = T)) #na.rm agregado por Vale porque marco error cuando puse vectores de todos los meses
   Hosp            <- modelo_ajustado %>% filter(str_detect(variable, "Hosp"))
   
   Hosp <- Hosp %>%
@@ -241,10 +243,25 @@ Hosp_enero <- fread("Hosp_2021-01-10m15.csv.gz")
 
 #Hacemos un vector de meses
 meses <- c("julio", "oct", "enero")
-fechas <- matrix(c(meses, vector_fechas), nrow = 2 )
+fechas <- matrix(c(meses, vector_fechas), nrow = 2 ) #segun yo no necesito esto
 dias_predict <- 60
 
+# Modificación 1
+#Leemos los resultados del modelo para todas las fechas
+assign(paste0("Hosp_", months(vector_fechas[i]), "m", m), fread(paste0("Hosp_", vector_fechas[i], "m15.csv.gz")))
+meses <- months(vector_fechas)
+dias_predict <- 60
+
+
 true_prob <- function(mes, estado){
+  
+  #NO estoy segura
+  for (month in meses){
+    if (mes == month){
+      observados_fecha <- observados %>%
+        filter(Fecha > vector_fechas[month] & Fecha <= (vector_fechas[month] + days(dias_predict())))
+    }
+  }
   
   if (mes == "julio"){
     observados_fecha <- observados %>%
@@ -302,10 +319,21 @@ julio <- `Hosp_resultados_julioCiudad de México`
 oct <- `Hosp_resultados_octCiudad de México`
 enero <- `Hosp_resultados_eneroCiudad de México`
 
+#Modificacion
+#Y ahora haremos un for para unir todo
+for (mes in meses){
+  assign(mes, get(paste0("Hosp_resultados_", mes, "Ciudad de México")))
+}
+#Esto se queda
 for (mes in meses){
   for (i in 2:length(estados)){
     assign(mes, bind_rows(get(mes), get(paste0("Hosp_resultados_", mes, estados[i]))) )
   }
+}
+
+#Modificacion
+for (mes in meses){
+  rownames(get(mes)) <- estados
 }
 
 rownames(julio) <- estados
@@ -319,6 +347,12 @@ nombres_columnas <- function(mes){
                       paste0("Intervalo_95", mes),
                       paste0("Intervalo_99", mes))
 }
+
+#Modificacion
+for (mes in meses){
+  colnames(get(mes)) <- nombres_columnas(mes)
+}
+
 
 colnames(julio) <- nombres_columnas("julio")
 colnames(oct) <- nombres_columnas("octubre")
@@ -340,11 +374,24 @@ calculo_mse <- function(mes){
   return(mse_aux)
 }
 
+#Modificacion
+for (mes in meses){
+  assign(paste0("mse_", mes), calculo_mse(mes))
+}
+
 mse_julio <- calculo_mse("julio")
 mse_oct <- calculo_mse("oct")
 mse_enero <- calculo_mse("enero")
 
+#Modificacion
+mse <- mse_mayo
+for (mes in meses){
+  mse <-cbind(mse, get(paste0("mse_", mes)))
+}
+
 mse <- cbind(mse_julio, mse_oct, mse_enero)
+
+#Esto se queda
 colnames(mse) <- meses
 rownames(mse) <- estados
 
@@ -361,14 +408,28 @@ calculo_mae <- function(mes){
   return(mae_aux)
 }
 
+#Modificacion
+for (mes in meses){
+  assign(paste0("mae_", mes), calculo_mae(mes))
+}
+mae <- mase_mayo
+for (mes in meses){
+  mae <-cbind(mae, get(paste0("mae_", mes)))
+}
+
+
+
+
 mae_julio <- calculo_mae("julio")
 mae_oct <- calculo_mae("oct")
 mae_enero <- calculo_mae("enero")
-
 mae <- cbind(mae_julio, mae_oct, mae_enero)
+
+#Esto se queda
 colnames(mae) <- meses
 rownames(mae) <- estados
 
+#Esto se queda
 write.csv(resultados, file = "resultados_int.csv", row.names = T)
 write.csv(mse, file = "mse.csv", row.names = T)
 write.csv(mae, file = "mae.csv", row.names = T)
@@ -524,4 +585,3 @@ for (k in 1:length(vector_fechas)){
     ggsave(paste0("Hosp_predict_v2_",vector_fechas[k],"m", m, "_conObservados.pdf"), width = 20, height = 10)
   dev.off
 }
-
